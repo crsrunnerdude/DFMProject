@@ -1,0 +1,256 @@
+library(dplyr)
+library(plyr)
+
+
+
+#Detention_Population Tab
+-------------------------------------------
+#Read Admission Release
+
+adminRel <- read.csv(file = "c:/Users/crsru_000/Desktop/DFM Project/AdmissionReleases2019Q2.csv", stringsAsFactors = FALSE, header=TRUE)
+CountyFilter2 <- c("Minnehaha County")
+adminRelUpd<- filter(adminRel, Initial.Held.For %in% CountyFilter2)
+
+AdminIntake <- merge(adminRelUpd, intakeUpd, all.x = TRUE)
+View(AdminIntake)
+-------------------------------------------
+#Convert Race/Ethnicity into One Column for AdminIntake
+  
+Ethnicity <- AdminIntake$Ethnicity
+Race <- AdminIntake$Race
+EthRace <- AdminIntake$Race.Ethnicity
+white <- gsub("Caucasian", "White", AdminIntake$Race.Ethnicity, ignore.case = TRUE)
+black <- gsub("African American", "Black", AdminIntake$Race.Ethnicity, ignore.case = TRUE)
+amindian <- gsub("Native American", "American Indian", AdminIntake$Race.Ethnicity, ignore.case = TRUE)
+hispanic <- gsub("Hispanic or Latino", "Hispanic", AdminIntake$Ethnicity, ignore.case = TRUE)
+
+
+
+AdminIntake$ActualEthnicity <- ifelse(EthRace == "Caucasian", white,
+                                      ifelse(EthRace == "African American", black, 
+                                             ifelse(EthRace == "Native American", amindian,
+                                                    ifelse(EthRace == "Asian", "Asian",
+                                                           ifelse(EthRace == "Hispanic", "Hispanic", 
+                                                                  ifelse(Ethnicity == "Hispanic or Latino", hispanic,
+                                                                         ifelse(EthRace == is.na(EthRace), blank, "Other")))))))
+AdminIntake$ActualEthnicity <- as.factor(AdminIntake$ActualEthnicity)
+count(AdminIntake, vars = "ActualEthnicity")
+
+------------------------------------------------------------------------
+#Convert Warrants to Court Order
+#Most Serious Offense shows up as numbers rather than the word...how can we switch that?
+CourtOrder <- gsub("Warrant", "Court Order", AdminIntake$Most.Serious.Offense.Category)
+AdminIntake$MostSeriousOffenseUpd <- ifelse(AdminIntake$Most.Serious.Offense.Category == "Warrant", CourtOrder, 
+                                            ifelse(AdminIntake$Primary.Hold.Reason == "Mental Health Hold", "*Mental Health Hold", AdminIntake$Most.Serious.Offense.Category))
+count(AdminIntake$MostSeriousOffenseUpd)
+
+
+
+
+------------------------------------------------------------------------
+  
+#create variables for booking date, quarter start and end, releases, held, then count what is held during the time  
+bookdate <- as.POSIXct(adminRelUpd$Booking.Date.Time, format = "%m/%d/%Y %H:%M")
+releases1 <- as.POSIXct(adminRelUpd$Release.Date, format = "%m/%d/%Y %H:%M")
+released <- ifelse(bookdate <= releases1, "Released", "Held")
+
+--------------------------------------------------------------------
+#Defines Each Quarter start and end
+q1start <- as.POSIXct("01/01/2019 00:01", format = "%m/%d/%Y %H:%M")
+q1end <- as.POSIXct("03/31/2019 23:59", format = "%m/%d/%Y %H:%M")
+q2start <- q1end + 61
+q2end <- as.POSIXct("06/30/2019 23:59", format = "%m/%d/%Y %H:%M")
+q3start <- q2end + 61
+q3end <- as.POSIXct("09/30/2019 23:59", format = "%m/%d/%Y %H:%M")
+q4start <- q3end + 61
+q4end <- as.POSIXct("12/31/2019 23:59", format = "%m/%d/%Y %H:%M")
+
+AdminIntake$Quarter <- ifelse(q1start > bookdate, "Before Q1", 
+                         ifelse(q1end >= bookdate & bookdate >= q1start, "Q1", 
+                                ifelse(q2end >= bookdate & bookdate >= q2start, "Q2",
+                                    ifelse(q3end >= bookdate & bookdate >= q3start, "Q3", "Q4"))))
+
+AdminIntake$QuarterReleases <- ifelse(q1start > releases1, "Before Q1 Release", 
+                                  ifelse(q1end >= releases1 & releases1 >= q1start, "Q1 Release", 
+                                     ifelse(q2end >= releases1 & releases1 >= q2start, "Q2 Release",
+                                            ifelse(q3end >= releases1 & releases1 >= q3start, "Q3 Release", 
+                                                   ifelse(q4end >= releases1 & releases1 >= q4start, "Q4 Release", "Not Released")))))
+
+--------------------------------------------------------------
+#Subset for Start of Quarter 1
+AdminIntake$Quarter1Start <- ifelse(AdminIntake$Quarter == "Before Q1", 1, 0)
+quarter1.start.data <- subset(AdminIntake, Quarter1Start == 1)
+
+count(quarter1.start.data$Sex) 
+count(quarter1.start.data$ActualEthnicity)
+count(quarter1.start.data$MostSeriousOffenseUpd)
+
+--------------------------------------------------------------
+#Subset for End of Quarter 1
+AdminIntake$Quarter1End <- ifelse(AdminIntake$Quarter == "Q1", 1, 
+                                  ifelse(AdminIntake$QuarterReleases == "Quarter 1 Releases", 2, 0))
+quarter1.end.data <- subset(AdminIntake, Quarter1End == 1)
+
+
+count(quarter1.end.data$Sex) 
+count(quarter1.end.data$ActualEthnicity)
+count(quarter1.end.data$MostSeriousOffenseUpd)
+
+
+
+---------------------------------------------------------------
+#Subset for Quarter 2 Start
+#This start subset isn't quite right..
+  
+AdminIntake$Quarter2Start <- ifelse(AdminIntake$Quarter == "Q1" | AdminIntake$Quarter == "Before Q1", 1, 0)
+quarter2.start.data <- subset(AdminIntake, Quarter2Start == 1)
+
+count(quarter2.start.data$Sex) 
+count(quarter2.start.data$ActualEthnicity)
+count(quarter2.start.data$MostSeriousOffenseUpd)  
+  
+#Subset for Quarter 2 Admissions
+q2.admission.data <- subset(AdminIntake, Quarter == "Q2")
+View(q2.admission.data)
+count(q2.admission.data$Sex) 
+count(q2.admission.data$ActualEthnicity)
+count(q2.admission.data$MostSeriousOffenseUpd)  
+
+
+#Subset for Quarter 2 Releases
+q2.release.data <- subset(AdminIntake, QuarterReleases == "Q2 Release")
+
+count(q2.release.data$Sex)
+count(q2.release.data$ActualEthnicity)
+count(q2.release.data$MostSeriousOffenseUpd)
+
+#Subset for Quarter 2 End
+q2.end.data <- subset(AdminIntake, QuarterReleases == "Q3 Release" | is.na(QuarterReleases))
+View(q2.end.data)
+count(q2.end.data$Sex)
+count(q2.end.data$ActualEthnicity)
+count(q2.end.data$MostSeriousOffenseUpd)
+
+----------------------------------------------------------------
+#Subset for End of Quarter 3
+
+-----------------------------------------------------------------
+#Subset for End of Quarter 4
+
+
+-----------------------------------------------------------------------
+#Overrides Tab
+-----------------------------------------------------------------------
+# Read Overrides
+  
+Overrides <- read.csv(file = "C:/Users/crsru_000/Desktop/DFM Project/RAI Overrides Q2.csv", stringsAsFactors = FALSE, header = TRUE)
+
+-----------------------------------------------------------------------
+library(fastDummies)
+#Max.column
+  
+#RaceTypes:
+#American Indian
+#Asian
+#Black
+#Hispanic
+#White
+#Other
+
+
+Overrides$SplitRace <- strsplit(Overrides$Race, ",")
+View(Overrides)
+bruh <- ifelse(Overrides$SplitRace [0] == "White", 1, 0)
+View(bruh)
+
+indian <- ifelse(SplitRace$Value == "White", "y", "x")
+
+#Asian, Black, Indian, Unavailable, White, hispanic
+#Transform into correct race
+white <- "White"
+black <- "Black"
+amindian <- sub("Indian", "American Indian", Overrides$Race, ignore.case = TRUE)
+
+OverrideRace <- Overrides$Race
+OverrideSex <- Overrides$Sex
+
+#Creates column that has correct race
+#Need to find a way to update rows that have multiple Races
+Overrides$ActualRace <- ifelse(OverrideRace == "White", white,
+                               ifelse(OverrideRace == "Black", black, 
+                                      ifelse(OverrideRace == "Indian", amindian,
+                                             ifelse(OverrideRace == "Asian", "Asian",
+                                                    ifelse(OverrideRace == "Hispanic", "Hispanic",
+                                                           ifelse(OverrideRace == is.na(OverrideRace), "NA", "Other"))))))
+
+Overrides$ActualRace <- as.factor(Overrides$ActualRace)
+count(Overrides$ActualRace)
+View(Overrides)
+
+-----------------------------------------------------------------------
+#Subset by Override Up
+override.data <- subset(Overrides, OverrideOutcome == "Overrode Up")
+
+count(override.data$Gender)
+count(override.data3$Race)
+-----------------------------------------------------------------------
+#Subset by Override Down
+override.data2 <- subset(Overrides, OverrideOutcome == "Overrode Down")
+
+count(override.data2$Gender)
+count(override.data2$Race)
+-----------------------------------------------------------------------
+#Subset by No Override
+override.data3 <- subset(Overrides, OverrideOutcome == "No Override")
+
+count(override.data3$Gender)
+count(override.data3$Race)
+-----------------------------------------------------------------------
+#Referal's Screened Tab
+-----------------------------------------------------------------------
+ReferralsScreened <- read.csv(file = "C:/Users/crsru_000/Desktop/DFM Project/RAI Indicated-Actual Q2.csv", stringsAsFactors = FALSE, header=TRUE)
+RefFilter <- c("Minnehaha Juvenile Detention Center")
+RefScreenUpd <- filter(ReferralsScreened, IntakeCntr %in% RefFilter)
+
+
+-----------------------------------------------------------------------
+#Quarter Count
+#Adjust IndDec #'s to Change between "Secure Detention, Alternative, Release")
+#Adjust ActDec #'s to change between "Release, Conditional Release, Other Alternative, Secure Detention, DOC Hold Only")
+
+RefScreenUpd$IndDec <- ifelse(RefScreenUpd$IndicatedDecision == "Secure Detention", 1,
+                         ifelse(RefScreenUpd$IndicatedDecision == "Alternative", 2,
+                           ifelse(RefScreenUpd$IndicatedDecision == "Release", 3, 0)))
+IndicatedDecision <- subset(RefScreenUpd, IndDec == 1)                    
+
+Detained$ActDec <- ifelse(Detained$ActualDecision == "Release", 1,
+                          ifelse(Detained$ActualDecision == "Conditional Release", 2,
+                                 ifelse(Detained$ActualDecision == "Other Alternative", 3, 
+                                        ifelse(Detained$ActualDecision == "Secure Detention", 4, 
+                                               ifelse(Detained$ActualDecision == "DOC Hold Only", 5, 0)))))
+ActualDecision <- subset(Detained, ActDec == 2)
+View(ActualDecision)
+
+count(ActualDecision$Gender)
+count(ActualDecision$Race)
+
+----------------------------------------------------------------------
+#Read Stay Schedule
+  
+StaySchedule <- read.csv(file = "C:/Users/crsru_000/Desktop/DFM Project/Stay Schedule 2019 Q2.csv", stringsAsFactors = FALSE, header = TRUE)
+ShelterCareFilter <- c("Shelter Care")
+StayScheduleUpd <- filter(StaySchedule, Check.Out.Type %in% ShelterCareFilter)
+
+StartDate <- as.POSIXct(StayScheduleUpd$Actual.Start, format = "%m/%d/%%Y %H:%M:S")
+View(StartDate)
+bookdate <- as.POSIXct(adminRelUpd$Booking.Date.Time, format = "%m/%d/%Y %H:%M")
+
+difftime(StayScheduleUpd$Actual.Start, StayScheduleUpd$Actual.End, units = c("secs"))
+
+IntakeTimeFilter <- ifelse(difftime(StaySchedule$Actual.Start, StaySchedule$Actual.End) > 50)
+
+
+
+
+
+
